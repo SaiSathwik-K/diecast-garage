@@ -28,7 +28,7 @@ const camera = new THREE.PerspectiveCamera(
     1000
 );
 
-camera.position.set(25, 20, 0);
+camera.position.set(16.396326562568426, 5.566901629526235, 4.565670187751327);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -37,32 +37,35 @@ controls.minDistance = 10;
 controls.maxDistance = 18;
 controls.minPolarAngle = 0.5;
 controls.maxPolarAngle = 1.5;
-controls.target = new THREE.Vector3(0, 0, 0);
+controls.minAzimuthAngle = Math.PI/2;
+controls.maxAzimuthAngle = Math.PI/2;
+controls.target = new THREE.Vector3(0.3947764581126974, -0.6228893051537436, 4.294459922559769);
 controls.update();
+
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 10);
 scene.add(ambientLight);
 
 // Store the cars and their hitboxes
-const cars = [];
+const carGroups = [];
 const hitBoxes = [];
 
 const loader = new GLTFLoader().setPath(
     `${import.meta.env.BASE_URL}models/`
 );
 
-loader.load('garage.glb', (gltf) => {
+loader.load('garage_newsf90.glb', (gltf) => {
+
     const mesh = gltf.scene;
     mesh.position.set(0, 0, 0);
     scene.add(mesh);
-    gltf.scene.traverse((child) => {
 
+    gltf.scene.traverse((child) => {
         console.log(
             child.name,
             child.type,
             child.parent?.name
         );
-
     });
 
     const sf90 = gltf.scene.getObjectByName("SF90");
@@ -72,86 +75,139 @@ loader.load('garage.glb', (gltf) => {
     const temerario = gltf.scene.getObjectByName("Temerario");
     const f12 = gltf.scene.getObjectByName("f12");
 
-    // Keep references to both cars
-    cars.push(sf90, car812, clk, dakar, temerario, f12);
+    const models = [
+        sf90,
+        car812,
+        clk,
+        dakar,
+        temerario,
+        f12
+    ];
 
-    // Create hitboxes
-    hitBoxes.push(createHitbox(sf90));
-    hitBoxes.push(createHitbox(car812));
-    hitBoxes.push(createHitbox(clk));
-    hitBoxes.push(createHitbox(temerario));
-    hitBoxes.push(createHitbox(f12));
-    hitBoxes.push(createHitbox(dakar));
+    for (const model of models) {
 
+        const { group, hitbox } = createCarGroup(model);
+
+        carGroups.push(group);
+        hitBoxes.push(hitbox);
+    }
 });
 
-function createHitbox(car) {
+function createCarGroup(car) {
+    console.log(car.name, {
+    position: car.position.clone(),
+    rotation: car.rotation.clone(),
+    scale: car.scale.clone(),
+    parent: car.parent?.name
+    });
 
-    //remember where this car originally sits
-    car.userData.baseY = car.position.y;
-
-    //calculate bounding box around the car
+    // Calculate bounding box BEFORE changing hierarchy
     const box = new THREE.Box3().setFromObject(car);
 
-    //get size of bounding box
     const size = new THREE.Vector3();
-
     box.getSize(size);
 
-    //get center of bounding box
     const center = new THREE.Vector3();
     box.getCenter(center);
 
-    //make the 812 hitbox smaller
-    if (car.name === "812"){
-        size.z *= 0.5;
+    console.log(
+    car.name,
+    "car position:", car.position.clone(),
+    "box center:", center.clone(),
+    "difference:", center.clone().sub(car.position)
+    );
+    if (car.name === "SF90"){
+        size.y *= 0.7;
     }
-    if (car.name === "clk"){
-        size.z *= 0.4;
-        size.x *= 0.8;
-    }
-    if (car.name === "f12"){
-        size.z *= 0.5;
-    }
-    if (car.name === "Dakar"){
-        size.z *= 0.5;
-    }
-    if (car.name === "Temerario"){
+    if (car.name === "812") {
         size.z *= 0.5;
     }
 
-    //create actual hitbox geometry
+    if (car.name === "clk") {
+        size.z *= 0.4;
+        size.x *= 0.8;
+    }
+
+    if (car.name === "f12") {
+        size.z *= 0.5;
+    }
+
+    if (car.name === "Dakar") {
+        size.z *= 0.5;
+    }
+
+    if (car.name === "Temerario") {
+        size.z *= 0.5;
+    }
+
+
+    // Create hitbox
     const geometry = new THREE.BoxGeometry(
         size.x,
         size.y,
         size.z
     );
 
-    //creating and rendering the hitbox
     const material = new THREE.MeshBasicMaterial({
         color: 0xff0000,
         wireframe: true
     });
 
-    const hitbox = new THREE.Mesh(
-        geometry,
-        material
+    const hitbox = new THREE.Mesh(geometry, material);
+
+
+    //Create group
+    const group = new THREE.Group();
+    group.name = `${car.name}_Group`;
+    const parent = car.parent;
+    group.position.copy(car.position);
+    parent.add(group);
+    group.add(car);
+
+    //Group owns the position now
+    car.position.set(0, 0, 0);
+    group.worldToLocal(center);
+
+    console.log(
+    car.name,
+    "local hitbox center:",
+    center.clone()
+);
+
+    //Adding the hitbox
+    hitbox.position.copy(center);
+    group.add(hitbox);
+
+    hitbox.userData.carGroup = group;
+
+    group.userData.model = car;
+    group.userData.hitbox = hitbox;
+    group.userData.baseY = group.position.y;
+
+    console.log(
+    group.name,
+    "GROUP PARENT:",
+    group.parent?.name,
+    "CAR PARENT:",
+    car.parent?.name,
+    "HITBOX PARENT:",
+    hitbox.parent?.name
     );
 
-    //put hitbox around car
-    hitbox.position.copy(center);
 
-    //remember which car this hitbox belongs to
-    hitbox.userData.car = car;
-    car.userData.hitbox = hitbox;
-    scene.add(hitbox);
-    return hitbox;
+    return {
+        group,
+        hitbox
+    };
+
+    
+
 }
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let needsRaycast = false;
-let hoveredCar = null;
+let hoveredCarGroup = null;
 const HOVER_Y = 0.4;
 
 function onPointerMove(event) {
@@ -195,33 +251,35 @@ function animate() {
             raycaster.intersectObjects(hitBoxes);
         if (intersects.length > 0) {
             const hit = intersects[0];
-            hoveredCar =
-                hit.object.userData.car;
+            hoveredCarGroup = hit.object.userData.carGroup;
             console.log(
                 "HIT:",
-                hoveredCar.name
+                hoveredCarGroup.name
             );
             document.body.style.cursor = "pointer";
         } else {
-            hoveredCar = null;
+            hoveredCarGroup = null;
             document.body.style.cursor = "";
         }
         needsRaycast = false;
     }
-    for (const car of cars) {
+    for (const group of carGroups) {
 
-        const targetY =
-            car === hoveredCar
-                ? car.userData.baseY + HOVER_Y
-                : car.userData.baseY;
-        car.position.y +=
-            (targetY - car.position.y) * 0.1;
-    }
+    const targetY =
+        group === hoveredCarGroup
+            ? group.userData.baseY + HOVER_Y
+            : group.userData.baseY;
+
+    group.position.y +=
+        (targetY - group.position.y) * 0.1;
+}
     renderer.render(
         scene,
         camera
     );
     requestAnimationFrame(animate);
+    console.log("live camera position", camera.position.x, camera.position.y, camera.position.z);
+    console.log("target", controls.target);
 }
 
 animate();
